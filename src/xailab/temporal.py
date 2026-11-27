@@ -1,127 +1,111 @@
-"""
-Temporal Analysis Engine
-X-ALGORITHM-INTELLIGENCE
-
-Research tools for analyzing post timing
-and engagement development over time.
-"""
-
+import unittest
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
 
-from .schema import PostRecord
+from src.xailab.schema import (
+    PostRecord,
+    EngagementMetrics,
+    AudienceMetrics,
+)
 
-
-def calculate_post_age(
-    created_at: datetime,
-    reference_time: Optional[datetime] = None,
-) -> float:
-    """Calculate post age in hours."""
-
-    if not isinstance(created_at, datetime):
-        raise TypeError("created_at must be datetime")
-
-    if reference_time is None:
-        reference_time = datetime.now(created_at.tzinfo)
-
-    if not isinstance(reference_time, datetime):
-        raise TypeError("reference_time must be datetime")
-
-    if created_at.tzinfo != reference_time.tzinfo:
-        raise ValueError("Datetime timezone information must match")
-
-    age = (reference_time - created_at).total_seconds() / 3600
-
-    return round(max(age, 0), 4)
+from src.xailab.temporal import (
+    calculate_post_age,
+    calculate_engagement_velocity,
+    analyze_post_timing,
+    analyze_post_batch,
+    filter_recent_posts,
+)
 
 
-def calculate_engagement_velocity(
-    post: PostRecord,
-    reference_time: Optional[datetime] = None,
-) -> Optional[float]:
-    """Calculate average engagement per hour."""
+class TestTemporalAnalysis(unittest.TestCase):
 
-    post.validate()
+    def setUp(self):
+        self.reference_time = datetime(2026, 11, 27, 12, 0)
 
-    age_hours = calculate_post_age(
-        post.created_at,
-        reference_time,
-    )
+    def create_post(self, post_id, hours_ago, likes=100):
+        return PostRecord(
+            post_id=post_id,
+            author_id="user1",
+            created_at=self.reference_time - timedelta(hours=hours_ago),
+            text="Research post",
+            follower_count=1000,
+            engagement=EngagementMetrics(likes=likes),
+            audience=AudienceMetrics(impressions=2000),
+        )
 
-    if age_hours == 0:
-        return None
+    def test_calculate_post_age(self):
+        post_time = self.reference_time - timedelta(hours=5)
 
-    return round(post.total_engagement() / age_hours, 4)
+        result = calculate_post_age(
+            post_time,
+            self.reference_time,
+        )
 
+        self.assertEqual(result, 5.0)
 
-def analyze_post_timing(
-    post: PostRecord,
-    reference_time: Optional[datetime] = None,
-) -> Dict[str, Any]:
-    """Extract temporal and engagement timing indicators."""
+    def test_engagement_velocity(self):
+        post = self.create_post("101", 2, likes=100)
 
-    post.validate()
-
-    age_hours = calculate_post_age(
-        post.created_at,
-        reference_time,
-    )
-
-    return {
-        "post_id": post.post_id,
-        "created_at": post.created_at.isoformat(),
-        "post_age_hours": age_hours,
-        "engagement_velocity": calculate_engagement_velocity(
+        result = calculate_engagement_velocity(
             post,
-            reference_time,
-        ),
-        "publishing_hour": post.created_at.hour,
-        "publishing_weekday": post.created_at.weekday(),
-    }
+            self.reference_time,
+        )
+
+        self.assertEqual(result, 50.0)
+
+    def test_analyze_post_timing(self):
+        post = self.create_post("102", 4)
+
+        result = analyze_post_timing(
+            post,
+            self.reference_time,
+        )
+
+        self.assertEqual(result["post_id"], "102")
+        self.assertEqual(result["post_age_hours"], 4.0)
+        self.assertEqual(result["publishing_hour"], 8)
+
+    def test_analyze_post_batch(self):
+        posts = [
+            self.create_post("101", 2),
+            self.create_post("102", 4),
+        ]
+
+        results = analyze_post_batch(
+            posts,
+            self.reference_time,
+        )
+
+        self.assertEqual(len(results), 2)
+
+    def test_filter_recent_posts(self):
+        posts = [
+            self.create_post("101", 2),
+            self.create_post("102", 12),
+            self.create_post("103", 48),
+        ]
+
+        results = filter_recent_posts(
+            posts,
+            hours=24,
+            reference_time=self.reference_time,
+        )
+
+        self.assertEqual(len(results), 2)
+        self.assertEqual(
+            [post.post_id for post in results],
+            ["101", "102"],
+        )
+
+    def test_zero_age_velocity(self):
+        post = self.create_post("104", 0)
+
+        result = calculate_engagement_velocity(
+            post,
+            self.reference_time,
+        )
+
+        self.assertIsNone(result)
 
 
-def analyze_post_batch(
-    posts: List[PostRecord],
-    reference_time: Optional[datetime] = None,
-) -> List[Dict[str, Any]]:
-    """Analyze timing indicators for multiple posts."""
-
-    if not isinstance(posts, list):
-        raise TypeError("posts must be a list")
-
-    return [
-        analyze_post_timing(post, reference_time)
-        for post in posts
-    ]
-
-
-def filter_recent_posts(
-    posts: List[PostRecord],
-    hours: float = 24,
-    reference_time: Optional[datetime] = None,
-) -> List[PostRecord]:
-    """Return posts published within the selected time window."""
-
-    if not isinstance(posts, list):
-        raise TypeError("posts must be a list")
-
-    if hours < 0:
-        raise ValueError("hours cannot be negative")
-
-    if reference_time is None:
-        reference_time = datetime.now()
-
-    cutoff = reference_time - timedelta(hours=hours)
-
-    results = []
-
-    for post in posts:
-        post.validate()
-
-        if post.created_at.tzinfo != cutoff.tzinfo:
-            raise ValueError("Datetime timezone information must match")
-
-        if cutoff <= post.created_at <= reference_time:
-            results.append(post)
-
-    return results
+if __name__ == "__main__":
+    unittest.main()
