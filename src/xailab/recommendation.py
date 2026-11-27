@@ -1,78 +1,84 @@
-"""
-Recommendation Analysis Engine
-X-ALGORITHM-INTELLIGENCE
+import unittest
+from datetime import datetime
 
-Experimental research engine for analyzing
-candidate posts and recommendation signals.
-"""
+from src.xailab.schema import (
+    PostRecord,
+    EngagementMetrics,
+    AudienceMetrics,
+)
 
-from typing import List, Dict, Any
-
-from .schema import PostRecord
-from .features import extract_post_features
-
-
-def analyze_recommendation(post: PostRecord) -> Dict[str, Any]:
-    """Analyze recommendation signals for one post."""
-
-    features = extract_post_features(post)
-
-    engagement_rate = features["engagement_rate"]
-    out_of_network_rate = features["out_of_network_rate"]
-    repost_rate = features["repost_rate"]
-    reply_rate = features["reply_rate"]
-
-    return {
-        "post_id": post.post_id,
-        "author_id": post.author_id,
-        "engagement_rate": engagement_rate,
-        "out_of_network_rate": out_of_network_rate,
-        "repost_rate": repost_rate,
-        "reply_rate": reply_rate,
-        "has_media": post.has_media,
-        "follower_count": post.follower_count,
-    }
+from src.xailab.recommendation import (
+    analyze_recommendation,
+    analyze_candidates,
+    rank_recommendation_candidates,
+)
 
 
-def analyze_candidates(
-    posts: List[PostRecord]
-) -> List[Dict[str, Any]]:
-    """Analyze a collection of candidate posts."""
+class TestRecommendationEngine(unittest.TestCase):
 
-    if not isinstance(posts, list):
-        raise TypeError("posts must be a list")
+    def create_post(self, post_id, likes, reposts, impressions,
+                    non_follower_impressions):
 
-    return [
-        analyze_recommendation(post)
-        for post in posts
-    ]
-
-
-def rank_recommendation_candidates(
-    posts: List[PostRecord]
-) -> List[Dict[str, Any]]:
-    """Sort candidates using experimental research signals."""
-
-    results = analyze_candidates(posts)
-
-    def score(item):
-        engagement = item["engagement_rate"] or 0
-        out_of_network = item["out_of_network_rate"] or 0
-        reposts = item["repost_rate"] or 0
-        replies = item["reply_rate"] or 0
-
-        return (
-            engagement * 0.40
-            + out_of_network * 0.30
-            + reposts * 0.20
-            + replies * 0.10
+        return PostRecord(
+            post_id=post_id,
+            author_id="user1",
+            created_at=datetime(2026, 11, 27, 12, 0),
+            text="Research post",
+            follower_count=1000,
+            engagement=EngagementMetrics(
+                likes=likes,
+                reposts=reposts,
+            ),
+            audience=AudienceMetrics(
+                impressions=impressions,
+                follower_impressions=(
+                    impressions - non_follower_impressions
+                ),
+                non_follower_impressions=non_follower_impressions,
+            ),
         )
 
-    for item in results:
-        item["experimental_score"] = round(score(item), 6)
+    def test_analyze_recommendation(self):
+        post = self.create_post("101", 100, 30, 2000, 1200)
 
-    return sorted(
-        results,
-        key=lambda item: item["experimental_score"],
-        reverse=True,
-    )
+        result = analyze_recommendation(post)
+
+        self.assertEqual(result["post_id"], "101")
+        self.assertEqual(result["engagement_rate"], 0.065)
+        self.assertEqual(result["out_of_network_rate"], 0.6)
+
+    def test_analyze_candidates(self):
+        posts = [
+            self.create_post("101", 100, 30, 2000, 1200),
+            self.create_post("102", 50, 10, 1000, 300),
+        ]
+
+        results = analyze_candidates(posts)
+
+        self.assertEqual(len(results), 2)
+
+    def test_rank_candidates(self):
+        posts = [
+            self.create_post("101", 100, 30, 2000, 1200),
+            self.create_post("102", 50, 10, 1000, 300),
+        ]
+
+        results = rank_recommendation_candidates(posts)
+
+        self.assertEqual(len(results), 2)
+        self.assertIn("experimental_score", results[0])
+
+        scores = [
+            item["experimental_score"]
+            for item in results
+        ]
+
+        self.assertEqual(scores, sorted(scores, reverse=True))
+
+    def test_invalid_input(self):
+        with self.assertRaises(TypeError):
+            analyze_candidates("invalid")
+
+
+if __name__ == "__main__":
+    unittest.main()
