@@ -1,14 +1,8 @@
-
-"""
-Data schemas for X-ALGORITHM-INTELLIGENCE.
-
-This module defines validated data structures
-for independent recommendation systems research.
-"""
+"""Data schemas for X-ALGORITHM-INTELLIGENCE."""
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 
 @dataclass
@@ -25,7 +19,6 @@ class EngagementMetrics:
         for name, value in self.__dict__.items():
             if not isinstance(value, int) or isinstance(value, bool):
                 raise TypeError(f"{name} must be an integer")
-
             if value < 0:
                 raise ValueError(f"{name} cannot be negative")
 
@@ -47,7 +40,6 @@ class AudienceMetrics:
             if value is not None:
                 if not isinstance(value, int) or isinstance(value, bool):
                     raise TypeError(f"{name} must be an integer")
-
                 if value < 0:
                     raise ValueError(f"{name} cannot be negative")
 
@@ -57,9 +49,7 @@ class AudienceMetrics:
             and self.follower_impressions + self.non_follower_impressions
             > self.impressions
         ):
-            raise ValueError(
-                "Audience impressions cannot exceed total impressions"
-            )
+            raise ValueError("Audience impressions exceed total impressions")
 
 
 @dataclass
@@ -76,9 +66,10 @@ class PostRecord:
         default_factory=AudienceMetrics
     )
     has_media: bool = False
+    hashtags: List[str] = field(default_factory=list)
     is_reply: bool = False
     is_repost: bool = False
-    hashtags: list[str] = field(default_factory=list)
+    link: Optional[str] = None
 
     def validate(self):
         if not self.post_id:
@@ -88,58 +79,33 @@ class PostRecord:
             raise ValueError("author_id is required")
 
         if not isinstance(self.created_at, datetime):
-            raise TypeError("created_at must be a datetime object")
+            raise TypeError("created_at must be datetime")
 
-        if (
-            not isinstance(self.follower_count, int)
-            or isinstance(self.follower_count, bool)
-            or self.follower_count < 0
-        ):
-            raise ValueError("follower_count must be a non-negative integer")
+        if not isinstance(self.follower_count, int):
+            raise TypeError("follower_count must be an integer")
+
+        if self.follower_count < 0:
+            raise ValueError("follower_count cannot be negative")
 
         if not isinstance(self.text, str):
             raise TypeError("text must be a string")
 
         if not isinstance(self.has_media, bool):
-            raise TypeError("has_media must be a boolean")
-
-        if not isinstance(self.is_reply, bool):
-            raise TypeError("is_reply must be a boolean")
-
-        if not isinstance(self.is_repost, bool):
-            raise TypeError("is_repost must be a boolean")
+            raise TypeError("has_media must be boolean")
 
         if not isinstance(self.hashtags, list):
             raise TypeError("hashtags must be a list")
 
-        if not all(isinstance(tag, str) for tag in self.hashtags):
-            raise TypeError("Every hashtag must be a string")
-
         self.engagement.validate()
         self.audience.validate()
 
-    def total_engagements(self) -> int:
+    def total_engagement(self) -> int:
         return (
             self.engagement.likes
             + self.engagement.replies
             + self.engagement.reposts
             + self.engagement.quotes
             + self.engagement.bookmarks
+            + self.engagement.link_clicks
+            + self.engagement.profile_visits
         )
-
-    def engagement_rate(self) -> Optional[float]:
-        impressions = self.audience.impressions
-
-        if impressions == 0:
-            return None
-
-        return self.total_engagements() / impressions
-
-    def out_of_network_rate(self) -> Optional[float]:
-        impressions = self.audience.impressions
-        non_followers = self.audience.non_follower_impressions
-
-        if impressions == 0 or non_followers is None:
-            return None
-
-        return non_followers / impressions
