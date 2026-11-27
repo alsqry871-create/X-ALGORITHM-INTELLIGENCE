@@ -1,0 +1,110 @@
+import unittest
+from datetime import datetime
+
+from src.xailab.schema import (
+    PostRecord,
+    EngagementMetrics,
+    AudienceMetrics,
+)
+
+from src.xailab.features import (
+    safe_divide,
+    extract_post_features,
+    extract_batch_features,
+)
+
+
+class TestFeatureEngineering(unittest.TestCase):
+
+    def create_post(self):
+        return PostRecord(
+            post_id="1001",
+            author_id="user1",
+            created_at=datetime(2026, 11, 27, 12, 0),
+            text="Research post about recommendation systems",
+            follower_count=1000,
+            engagement=EngagementMetrics(
+                likes=100,
+                replies=20,
+                reposts=30,
+                quotes=10,
+                bookmarks=15,
+            ),
+            audience=AudienceMetrics(
+                impressions=2000,
+                follower_impressions=800,
+                non_follower_impressions=1200,
+            ),
+            has_media=True,
+            hashtags=["AI", "Research"],
+        )
+
+    def test_safe_divide(self):
+        self.assertEqual(safe_divide(10, 2), 5)
+        self.assertIsNone(safe_divide(10, 0))
+
+    def test_engagement_rate(self):
+        post = self.create_post()
+        features = extract_post_features(post)
+
+        self.assertEqual(
+            features["engagement_rate"],
+            175 / 2000
+        )
+
+    def test_out_of_network_rate(self):
+        post = self.create_post()
+        features = extract_post_features(post)
+
+        self.assertEqual(
+            features["out_of_network_rate"],
+            0.6
+        )
+
+    def test_content_features(self):
+        post = self.create_post()
+        features = extract_post_features(post)
+
+        self.assertEqual(features["has_media"], 1)
+        self.assertEqual(features["hashtag_count"], 2)
+        self.assertEqual(features["follower_count"], 1000)
+
+    def test_zero_impressions(self):
+        post = self.create_post()
+        post.audience.impressions = 0
+        post.audience.follower_impressions = 0
+        post.audience.non_follower_impressions = 0
+
+        features = extract_post_features(post)
+
+        self.assertIsNone(features["engagement_rate"])
+        self.assertIsNone(features["out_of_network_rate"])
+
+    def test_invalid_post(self):
+        with self.assertRaises(TypeError):
+            extract_post_features("invalid")
+
+    def test_batch_extraction(self):
+        posts = [
+            self.create_post(),
+            self.create_post(),
+        ]
+
+        results = extract_batch_features(posts)
+
+        self.assertEqual(len(results), 2)
+        self.assertEqual(
+            results[0]["engagement_rate"],
+            results[1]["engagement_rate"]
+        )
+
+    def test_negative_engagement(self):
+        post = self.create_post()
+        post.engagement.likes = -10
+
+        with self.assertRaises(ValueError):
+            extract_post_features(post)
+
+
+if __name__ == "__main__":
+    unittest.main()
